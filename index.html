@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>かけ算パネルめくりゲーム（2年生向け）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Kosugi+Maru&display=swap');
+  
+  body {
+    font-family: 'Kosugi Maru', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 3D パネルアニメーション */
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  .transform-style-3d {
+    transform-style: preserve-3d;
+  }
+  .backface-hidden {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .rotate-y-180 {
+    transform: rotateY(180deg);
+  }
+
+  /* 揺れるアニメーション（不正解時） */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+  .animate-shake {
+    animation: shake 0.4s ease-in-out;
+  }
+
+  /* ポップアップ（正解時） */
+  @keyframes pop-in {
+    0% { transform: scale(0.3); opacity: 0; }
+    70% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .animate-pop {
+    animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  /* 30びょう 吸い込みアニメーション（なめらか＆サイズ変更対応） */
+  @keyframes absorb-time {
+    0% {
+      opacity: 0;
+      transform: translate(90px, -25px) scale(1.1);
+      filter: blur(2px);
+    }
+    20% {
+      opacity: 1;
+      transform: translate(65px, -15px) scale(1);
+      filter: blur(0px);
+    }
+    75% {
+      opacity: 0.9;
+      transform: translate(12px, -2px) scale(0.45);
+      filter: blur(0px);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.1);
+      filter: blur(1px);
+    }
+  }
+  .animate-absorb-time {
+    animation: absorb-time 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* スクロールバーのカスタマイズ */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-indigo-50 to-pink-100 min-h-screen flex items-center justify-center p-2 sm:p-4">
+
+<!-- メイン16:9ゲームコンテナ -->
+<div id="game-container" class="relative w-full max-w-5xl aspect-[16/9] bg-white rounded-3xl shadow-2xl border-4 border-blue-300 p-3 sm:p-5 flex flex-col justify-between overflow-hidden">
+
+  <!-- ヘッダーエリア -->
+  <header class="flex items-center justify-between border-b-2 border-blue-100 pb-2">
+    <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+      <span class="bg-blue-600 text-white font-black text-xs sm:text-base px-3 py-1 rounded-full shadow">
+        かけ算パネルめくりゲーム
+      </span>
+      <div id="level-display" class="flex items-center gap-1.5">
+        <span id="stage-badge" class="bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs sm:text-sm px-3 py-1 rounded-full shadow-sm">
+          ステージ 1
+        </span>
+        <span id="question-badge" class="bg-amber-400 text-amber-950 font-black text-xs sm:text-sm px-2.5 py-1 rounded-full shadow-sm">
+          だい 1 もん
+        </span>
+      </div>
+    </div>
+
+    <!-- 画面右上 サウンドトグルスイッチ -->
+    <button id="soundToggleBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-full shadow-md transition-all">
+      <span id="soundIcon">🔊</span>
+      <span id="soundLabel">音: ON</span>
+    </button>
+  </header>
+
+  <!-- サブヘッダー (ヒント・タイマー) -->
+  <div class="grid grid-cols-12 gap-3 px-2 py-1 bg-sky-50 rounded-xl border border-sky-200 text-xs sm:text-base items-center">
+    <div class="col-span-7 relative flex items-center gap-1.5 font-bold text-slate-700 px-1">
+      <span>⏰ のこりじかん:</span>
+      <div class="relative flex items-center">
+        <span id="timer" class="text-red-500 font-black text-base sm:text-xl font-mono bg-white px-2 py-0.5 rounded-lg border border-red-200 transition-transform inline-block">03:00</span>
+        <!-- 時間+30秒通知バッジ（サイズを2倍に拡大） -->
+        <span id="time-plus-badge" class="absolute left-0 -top-1 text-emerald-600 font-black text-2xl sm:text-3xl opacity-0 pointer-events-none whitespace-nowrap z-10 drop-shadow-md">＋30びょう！</span>
+      </div>
+    </div>
+
+    <div id="hint-area" class="col-span-5 font-bold text-slate-700 flex items-center justify-start gap-1.5 sm:gap-2 px-1 overflow-hidden">
+      <span class="bg-amber-400 text-white text-xs px-2 py-0.5 rounded-md shrink-0">ヒント</span>
+      <span id="category-hint" class="text-blue-800 font-black truncate">----</span>
+      <span class="text-slate-400 shrink-0">|</span>
+      <span id="word-length-hint" class="text-pink-600 font-bold whitespace-nowrap">--文字のことば</span>
+    </div>
+  </div>
+
+  <!-- メインコンテンツ (パネルボード & 回答欄) -->
+  <main class="grid grid-cols-12 gap-3 my-auto items-center">
+    
+    <!-- 左側: 九九パネルボード -->
+    <div class="col-span-7 sm:col-span-7 flex flex-col items-center justify-center">
+      <p class="text-xs sm:text-sm text-slate-500 mb-1 font-bold">パネルをタップして 九九に こたえよう！</p>
+      <div id="board" class="grid gap-2 sm:gap-3 w-full max-w-md justify-center"></div>
+    </div>
+
+    <!-- 右側: 獲得したひらがな & ことば完成エリア -->
+    <div class="col-span-5 sm:col-span-5 flex flex-col gap-2 bg-gradient-to-b from-amber-50 to-orange-50 p-2 sm:p-3 rounded-2xl border-2 border-orange-200 h-full justify-between">
+      
+      <!-- あつめたもじ -->
+      <div>
+        <div class="text-xs sm:text-sm font-bold text-orange-800 mb-1 flex items-center justify-between">
+          <span>あつめた もじ</span>
+          <span class="text-xs text-orange-600 font-normal">タップで えらぶ</span>
+        </div>
+        <div id="letters-pool" class="flex flex-wrap gap-1.5 sm:gap-2 min-h-[48px] p-2 bg-white/80 rounded-xl border border-orange-200 items-center justify-center">
+          <span class="text-xs text-slate-400">パネルを めくると もじが でるよ</span>
+        </div>
+      </div>
+
+      <!-- つくったことば (回答スロット) -->
+      <div>
+        <div class="text-xs sm:text-sm font-bold text-emerald-800 mb-1">
+          つくった ことば
+        </div>
+        <div id="answer-slots" class="flex flex-wrap gap-1.5 sm:gap-2 p-2 bg-emerald-100/80 rounded-xl border-2 border-dashed border-emerald-400 min-h-[56px] items-center justify-center">
+        </div>
+      </div>
+
+      <!-- 操作ボタン -->
+      <div class="flex items-center gap-2 pt-1">
+        <button id="clearAnswerBtn" class="flex-1 py-1.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs sm:text-sm rounded-xl transition shadow-sm">
+          やりなおす
+        </button>
+        <button id="checkWordBtn" class="flex-2 py-1.5 sm:py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs sm:text-base rounded-xl transition shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+          こたえあわせ
+        </button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- フッターエリア -->
+  <footer class="flex items-center justify-between border-t border-slate-100 pt-1 text-xs text-slate-500">
+    <button id="resetGameBtn" class="text-slate-500 hover:text-red-500 underline font-bold">
+      最初からやり直す
+    </button>
+    <div id="status-message" class="font-bold text-blue-600 sm:text-sm">
+      九九を といて パネルを めくろう！
+    </div>
+  </footer>
+
+</div>
+
+<!-- 九九クイズ入力モーダル -->
+<div id="quiz-modal" class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-opacity duration-200 opacity-0 pointer-events-none z-50">
+  <div id="modal-card" class="bg-white rounded-3xl shadow-2xl p-5 sm:p-6 w-full max-w-sm text-center transform scale-90 transition-transform duration-200 border-4 border-amber-300">
+    
+    <div class="bg-amber-100 text-amber-800 font-black text-xs sm:text-sm py-1 px-3 rounded-full inline-block mb-2">
+      かけ算クイズ
+    </div>
+
+    <!-- 九九の式 -->
+    <div id="quiz-expression" class="text-4xl sm:text-5xl font-black text-blue-700 my-2 tracking-wide font-mono">
+      7 × 8
+    </div>
+
+    <!-- 入力表示欄 -->
+    <div id="quiz-input-display" class="w-full text-center text-3xl font-black py-2 my-2 border-4 border-blue-400 bg-blue-50 rounded-2xl text-blue-900 h-14 flex items-center justify-center font-mono">
+      <span id="quiz-input-val" class="text-blue-900"></span>
+      <span class="animate-pulse text-blue-400">|</span>
+    </div>
+
+    <!-- テンキー (0-9, けす, 1字けす) -->
+    <div class="grid grid-cols-3 gap-2 my-3 max-w-[240px] mx-auto">
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="1">1</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="2">2</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="3">3</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="4">4</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="5">5</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="6">6</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="7">7</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="8">8</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="9">9</button>
+      <button class="numpad-btn p-2 bg-rose-100 hover:bg-rose-200 font-black text-sm text-rose-700 rounded-xl active:scale-95 shadow" data-action="clear">けす</button>
+      <button class="numpad-btn p-2 bg-slate-100 hover:bg-slate-200 font-black text-xl text-slate-800 rounded-xl active:scale-95 shadow" data-val="0">0</button>
+      <button class="numpad-btn p-2 bg-amber-100 hover:bg-amber-200 font-black text-sm text-amber-700 rounded-xl active:scale-95 shadow" data-action="back">1字けす</button>
+    </div>
+
+    <!-- 決定ボタン -->
+    <div class="flex items-center gap-2">
+      <button id="closeQuizBtn" class="flex-1 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition">
+        もどる
+      </button>
+      <button id="submitQuizBtn" class="flex-2 py-2 bg-blue-600 text-white font-black text-lg rounded-xl hover:bg-blue-700 transition shadow-lg active:scale-95">
+        けってい
+      </button>
+    </div>
+
+    <div id="quiz-feedback" class="mt-2 text-sm font-bold min-h-[20px] text-red-500"></div>
+  </div>
+</div>
+
+<!-- 正解・不正解アニメーションオーバーレイ (SVG「たいへんよくできました」) -->
+<div id="feedback-overlay" class="fixed inset-0 pointer-events-none flex items-center justify-center z-50 opacity-0 transition-opacity duration-200">
+  <div id="feedback-content" class="flex items-center justify-center">
+    <!-- SVG動的書き換えエリア -->
+  </div>
+</div>
+
+<!-- ステージクリアモーダル -->
+<div id="stage-clear-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 opacity-0 pointer-events-none z-50">
+  <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md text-center border-4 border-emerald-400 flex flex-col items-center gap-4 animate-pop">
+    <div class="text-5xl">🏆</div>
+    <h2 id="stage-clear-title" class="text-2xl sm:text-3xl font-black text-emerald-800">
+      だい 1 ステージ クリア！
+    </h2>
+    <p class="text-slate-600 font-bold text-sm">
+      ぜんぶの もんだいに せいかいしたよ！<br>つぎの ステージに チャレンジしよう！
+    </p>
+    <button id="nextStageBtn" class="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-lg rounded-2xl shadow-lg hover:from-emerald-600 hover:to-teal-700 transition active:scale-95 mt-2">
+      だい 2 ステージへ すすむ 🚀
+    </button>
+  </div>
+</div>
+
+<!-- ゲーム終了・結果モーダル -->
+<div id="game-over-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 opacity-0 pointer-events-none z-50">
+  <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-lg text-center border-4 border-blue-400 max-h-[90vh] flex flex-col justify-between">
+    <div>
+      <h2 id="result-title" class="text-3xl font-black text-blue-800 mb-2">
+        全問クリア！おめでとう！🎉
+      </h2>
+      <p id="result-subtitle" class="text-slate-600 text-sm mb-4 font-bold">
+        たくさん ことばを あつめたよ！
+      </p>
+
+      <!-- あつめたことば一覧 -->
+      <div class="mb-4">
+        <h3 class="text-xs font-bold text-slate-500 text-left mb-1">あつめたことば</h3>
+        <div id="collected-words-result" class="flex flex-wrap gap-2 p-3 bg-blue-50 rounded-2xl border border-blue-200 max-h-32 overflow-y-auto">
+        </div>
+      </div>
+
+      <!-- 復習九九リスト -->
+      <div class="mb-4">
+        <h3 class="text-xs font-bold text-slate-500 text-left mb-1">もういちど ふくしゅうしよう（まちがえた九九）</h3>
+        <div id="review-kuku-result" class="flex flex-wrap gap-2 p-3 bg-rose-50 rounded-2xl border border-rose-200 max-h-28 overflow-y-auto min-h-[48px] items-center justify-center text-xs text-slate-500">
+          全問正解！バッチリだね！✨
+        </div>
+      </div>
+    </div>
+
+    <button id="restartGameBtn" class="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-lg rounded-2xl shadow-lg hover:from-emerald-600 hover:to-teal-700 transition active:scale-95">
+      もういちど あそぶ 🔄
+    </button>
+  </div>
+</div>
+
+<script>
+/* ========================================================
+   1. サウンドエンジン (Web Audio API)
+   ======================================================== */
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.isMuted = false;
+  }
+  initCtx() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    return this.isMuted;
+  }
+  playTap() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.05);
+  }
+  playPingPong() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    [1046.5, 1318.5].forEach((freq, i) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.2, now + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.25);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + i * 0.12);
+      osc.stop(now + i * 0.12 + 0.25);
+    });
+  }
+  playIncorrect() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    [220, 207.65].forEach((freq, i) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, now + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.15 + 0.2);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + i * 0.15);
+      osc.stop(now + i * 0.15 + 0.2);
+    });
+  }
+  playFanfare() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const notes = [
+      { f: 523.25, t: 0, d: 0.12 },
+      { f: 659.25, t: 0.12, d: 0.12 },
+      { f: 783.99, t: 0.24, d: 0.12 },
+      { f: 1046.5, t: 0.36, d: 0.4 }
+    ];
+    notes.forEach(n => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = n.f;
+      gain.gain.setValueAtTime(0.25, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d);
+    });
+  }
+}
+
+const sounds = new SoundEngine();
+
+/* ========================================================
+   2. 単語データベース (全100種類)
+   ======================================================== */
+const WORD_DATABASE = {
+  "どうぶつ・いきもの": [
+    { word: "いぬ", dummy: ["ね", "こ", "さ", "る"] },
+    { word: "ねこ", dummy: ["い", "ぬ", "と", "ら"] },
+    { word: "とら", dummy: ["り", "す", "う", "ま"] },
+    { word: "りす", dummy: ["か", "め", "え", "び"] },
+    { word: "うま", dummy: ["し", "か", "た", "こ"] },
+    { word: "かめ", dummy: ["り", "す", "い", "ぬ"] },
+    { word: "さる", dummy: ["と", "ら", "ね", "こ"] },
+    { word: "しか", dummy: ["う", "ま", "さ", "る"] },
+    { word: "たこ", dummy: ["え", "び", "か", "め"] },
+    { word: "えび", dummy: ["た", "こ", "り", "す"] },
+    { word: "うさぎ", dummy: ["き", "つ", "ね"] },
+    { word: "きつね", dummy: ["た", "ぬ", "き"] },
+    { word: "たぬき", dummy: ["ご", "り", "ら"] },
+    { word: "ごりら", dummy: ["か", "え", "る"] },
+    { word: "かえる", dummy: ["め", "だ", "か"] },
+    { word: "めだか", dummy: ["か", "ら", "す"] },
+    { word: "からす", dummy: ["き", "り", "ん"] },
+    { word: "きりん", dummy: ["う", "さ", "ぎ"] },
+    { word: "らいおん", dummy: ["あ", "い"] },
+    { word: "ぺんぎん", dummy: ["う", "え", "お"] },
+    { word: "ちょうちょ", dummy: ["か", "き", "く"] },
+    { word: "くわがた", dummy: ["さ", "し"] },
+    { word: "かぶとむし", dummy: ["あ", "い", "う", "え"] },
+    { word: "はむすたー", dummy: ["か", "き", "く"] },
+    { word: "どうぶつえん", dummy: ["さ", "し", "す", "せ"] }
+  ],
+  "たべもの・のみもの": [
+    { word: "あめ", dummy: ["も", "も", "の", "り"] },
+    { word: "もも", dummy: ["み", "そ", "ぱ", "ん"] },
+    { word: "のり", dummy: ["ぐ", "み", "す", "し"] },
+    { word: "みそ", dummy: ["あ", "め", "も", "も"] },
+    { word: "ぱん", dummy: ["の", "り", "ぐ", "み"] },
+    { word: "ぐみ", dummy: ["す", "し", "あ", "め"] },
+    { word: "すし", dummy: ["ぱ", "ん", "み", "そ"] },
+    { word: "いちご", dummy: ["ぶ", "ど", "う"] },
+    { word: "みかん", dummy: ["す", "い", "か"] },
+    { word: "ぶどう", dummy: ["ば", "な", "な"] },
+    { word: "すいか", dummy: ["と", "ま", "と"] },
+    { word: "ばなな", dummy: ["ぷ", "り", "ん"] },
+    { word: "とまと", dummy: ["こ", "お", "り"] },
+    { word: "ぷりん", dummy: ["い", "ち", "ご"] },
+    { word: "こおり", dummy: ["み", "か", "ん"] },
+    { word: "おにぎり", dummy: ["あ", "い"] },
+    { word: "らーめん", dummy: ["う", "え"] },
+    { word: "けーき", dummy: ["お", "か", "き", "く"] },
+    { word: "かれー", dummy: ["さ", "し"] },
+    { word: "どーなつ", dummy: ["す", "せ"] },
+    { word: "ぐらたん", dummy: ["そ", "た"] },
+    { word: "はんばーぐ", dummy: ["あ", "い", "う"] },
+    { word: "おむらいす", dummy: ["か", "き", "く", "け"] },
+    { word: "すぱげってぃ", dummy: ["さ", "し", "す"] },
+    { word: "ぽてとちっぷ", dummy: ["た", "ち", "つ"] }
+  ],
+  "のりもの・まち": [
+    { word: "ふね", dummy: ["ば", "す", "え", "き"] },
+    { word: "ばす", dummy: ["み", "ち", "は", "し"] },
+    { word: "えき", dummy: ["い", "え", "ふ", "ね"] },
+    { word: "みち", dummy: ["ば", "す", "え", "き"] },
+    { word: "はし", dummy: ["い", "え", "ふ", "ね"] },
+    { word: "いえ", dummy: ["ば", "す", "み", "ち"] },
+    { word: "くるま", dummy: ["べ", "ん", "ち"] },
+    { word: "べんち", dummy: ["ぽ", "す", "と"] },
+    { word: "ぽすと", dummy: ["こ", "う", "え", "ん"] },
+    { word: "こうえん", dummy: ["つ", "り", "ば", "し"] },
+    { word: "つりばし", dummy: ["く", "る", "ま"] },
+    { word: "でんしゃ", dummy: ["あ", "い"] },
+    { word: "ひこうき", dummy: ["う", "え"] },
+    { word: "ろけっと", dummy: ["お", "か", "き"] },
+    { word: "ぱとかー", dummy: ["く", "け", "こ", "さ"] },
+    { word: "たくしー", dummy: ["し", "す", "せ", "そ"] },
+    { word: "とらっく", dummy: ["た", "ち", "つ", "て"] },
+    { word: "ぶらんこ", dummy: ["な", "に", "ぬ", "ね"] },
+    { word: "こうばん", dummy: ["は", "ひ"] },
+    { word: "しんかんせん", dummy: ["あ", "い", "う"] },
+    { word: "じどうしゃ", dummy: ["か", "き", "く", "け"] },
+    { word: "すべりだい", dummy: ["さ", "し", "す", "せ"] },
+    { word: "しんごうき", dummy: ["た", "ち"] },
+    { word: "しょうぼうしゃ", dummy: ["な", "に"] }
+  ],
+  "がっこう・せいかつ": [
+    { word: "ほん", dummy: ["い", "す", "ぺ", "ん"] },
+    { word: "いす", dummy: ["の", "り", "か", "さ"] },
+    { word: "ぺん", dummy: ["く", "つ", "ふ", "く"] },
+    { word: "のり", dummy: ["ほ", "ん", "い", "す"] },
+    { word: "かさ", dummy: ["ぺ", "ん", "の", "り"] },
+    { word: "くつ", dummy: ["ふ", "く", "か", "さ"] },
+    { word: "ふく", dummy: ["く", "つ", "ほ", "ん"] },
+    { word: "はさみ", dummy: ["と", "け", "い"] },
+    { word: "とけい", dummy: ["つ", "く", "え"] },
+    { word: "つくえ", dummy: ["の", "ー", "と"] },
+    { word: "のーと", dummy: ["か", "ば", "ん"] },
+    { word: "かばん", dummy: ["ぼ", "う", "し"] },
+    { word: "ぼうし", dummy: ["こ", "く", "ば", "ん"] },
+    { word: "こくばん", dummy: ["は", "さ", "み"] },
+    { word: "えんぴつ", dummy: ["あ", "い", "う"] },
+    { word: "けしごむ", dummy: ["あ", "か", "さ", "た"] },
+    { word: "じょうぎ", dummy: ["あ", "い"] },
+    { word: "きょうしつ", dummy: ["あ", "い", "う"] },
+    { word: "そうじき", dummy: ["あ", "い", "う"] },
+    { word: "ふでばこ", dummy: ["か", "き", "く"] },
+    { word: "たいいくかん", dummy: ["あ", "い"] },
+    { word: "おりがみ", dummy: ["う", "え"] },
+    { word: "たんじょうび", dummy: ["お", "か", "き"] },
+    { word: "おたのしみ", dummy: ["く", "け"] },
+    { word: "すいぞくかん", dummy: ["さ", "し", "す"] }
+  ]
+};
+
+// 全九九リスト生成 (2の段〜9の段)
+function generateAllMultiplications() {
+  const list = [];
+  for (let i = 2; i <= 9; i++) {
+    for (let j = 1; j <= 9; j++) {
+      list.push({ num1: i, num2: j, ans: i * j });
+    }
+  }
+  return list;
+}
+
+// 配列のシャッフル
+function shuffleArray(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* ========================================================
+   3. ゲーム状態変数
+   ======================================================== */
+let gameLevelsData = [];
+let currentStage = 1;
+let currentLevelIdx = 0;
+let currentActiveTileIndex = null;
+let currentQuizInputValue = "";
+let openedTiles = [];
+let availablePoolLetters = [];
+let userSelectedLetters = [];
+let collectedWords = [];
+let reviewKukuList = new Set();
+let pendingBonusTime = false;
+
+let timerInterval = null;
+let remainingSeconds = 180;
+
+/* ========================================================
+   4. DOM要素の取得
+   ======================================================== */
+const elements = {
+  soundToggleBtn: document.getElementById("soundToggleBtn"),
+  soundIcon: document.getElementById("soundIcon"),
+  soundLabel: document.getElementById("soundLabel"),
+  levelDisplay: document.getElementById("level-display"),
+  categoryHint: document.getElementById("category-hint"),
+  wordLengthHint: document.getElementById("word-length-hint"),
+  timer: document.getElementById("timer"),
+  timePlusBadge: document.getElementById("time-plus-badge"),
+  board: document.getElementById("board"),
+  lettersPool: document.getElementById("letters-pool"),
+  answerSlots: document.getElementById("answer-slots"),
+  clearAnswerBtn: document.getElementById("clearAnswerBtn"),
+  checkWordBtn: document.getElementById("checkWordBtn"),
+  resetGameBtn: document.getElementById("resetGameBtn"),
+  statusMessage: document.getElementById("status-message"),
+
+  // モーダル
+  quizModal: document.getElementById("quiz-modal"),
+  modalCard: document.getElementById("modal-card"),
+  quizExpression: document.getElementById("quiz-expression"),
+  quizInputVal: document.getElementById("quiz-input-val"),
+  closeQuizBtn: document.getElementById("closeQuizBtn"),
+  submitQuizBtn: document.getElementById("submitQuizBtn"),
+  quizFeedback: document.getElementById("quiz-feedback"),
+
+  // フィードバック & ステージクリア
+  feedbackOverlay: document.getElementById("feedback-overlay"),
+  feedbackContent: document.getElementById("feedback-content"),
+  stageClearModal: document.getElementById("stage-clear-modal"),
+  stageClearTitle: document.getElementById("stage-clear-title"),
+  nextStageBtn: document.getElementById("nextStageBtn"),
+
+  // リザルト
+  gameOverModal: document.getElementById("game-over-modal"),
+  collectedWordsResult: document.getElementById("collected-words-result"),
+  reviewKukuResult: document.getElementById("review-kuku-result"),
+  restartGameBtn: document.getElementById("restartGameBtn")
+};
+
+/* ========================================================
+   5. 初期化 & イベントリスナー
+   ======================================================== */
+window.addEventListener("DOMContentLoaded", () => {
+  initGame();
+  setupEventListeners();
+});
+
+function setupEventListeners() {
+  elements.soundToggleBtn.addEventListener("click", () => {
+    const isMuted = sounds.toggleMute();
+    elements.soundIcon.textContent = isMuted ? "🔇" : "🔊";
+    elements.soundLabel.textContent = isMuted ? "音: OFF" : "音: ON";
+    elements.soundToggleBtn.classList.toggle("bg-gray-400", isMuted);
+    elements.soundToggleBtn.classList.toggle("bg-emerald-500", !isMuted);
+  });
+
+  elements.closeQuizBtn.addEventListener("click", hideQuizModal);
+
+  document.querySelectorAll(".numpad-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      sounds.playTap();
+      const val = btn.dataset.val;
+      const action = btn.dataset.action;
+
+      if (val !== undefined) {
+        if (currentQuizInputValue.length < 2) {
+          currentQuizInputValue += val;
+        }
+      } else if (action === "clear") {
+        currentQuizInputValue = "";
+      } else if (action === "back") {
+        currentQuizInputValue = currentQuizInputValue.slice(0, -1);
+      }
+      updateQuizInputDisplay();
+    });
+  });
+
+  elements.submitQuizBtn.addEventListener("click", handleQuizSubmit);
+  elements.clearAnswerBtn.addEventListener("click", resetUserAnswer);
+  elements.checkWordBtn.addEventListener("click", checkWordAnswer);
+
+  elements.nextStageBtn.addEventListener("click", startNextStage);
+
+  elements.resetGameBtn.addEventListener("click", () => initGame(true));
+  elements.restartGameBtn.addEventListener("click", () => {
+    hideGameOverModal();
+    initGame(true);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (elements.quizModal.classList.contains("opacity-100")) {
+      if (e.key >= "0" && e.key <= "9") {
+        if (currentQuizInputValue.length < 2) {
+          currentQuizInputValue += e.key;
+          updateQuizInputDisplay();
+          sounds.playTap();
+        }
+      } else if (e.key === "Backspace") {
+        currentQuizInputValue = currentQuizInputValue.slice(0, -1);
+        updateQuizInputDisplay();
+        sounds.playTap();
+      } else if (e.key === "Enter") {
+        handleQuizSubmit();
+      } else if (e.key === "Escape") {
+        hideQuizModal();
+      }
+    }
+  });
+}
+
+/* ========================================================
+   6. ゲーム進行・レベル生成
+   ======================================================== */
+function buildRandomLevels() {
+  const categories = ["どうぶつ・いきもの", "たべもの・のみもの", "のりもの・まち", "がっこう・せいかつ"];
+  const shuffledCategories = shuffleArray(categories);
+  const allKuku = shuffleArray(generateAllMultiplications());
+  let kukuIdx = 0;
+
+  const levels = [];
+
+  shuffledCategories.forEach((cat, levelNum) => {
+    const wordList = WORD_DATABASE[cat];
+    const pickedWordObj = wordList[Math.floor(Math.random() * wordList.length)];
+    const targetWord = pickedWordObj.word;
+    const dummyCount = pickedWordObj.dummy ? pickedWordObj.dummy.length : 3;
+
+    const rawLetters = [
+      ...targetWord.split(""),
+      ...Array(dummyCount).fill("✖")
+    ];
+    const totalCount = rawLetters.length;
+
+    const mulQuestions = [];
+    for (let i = 0; i < totalCount; i++) {
+      if (kukuIdx >= allKuku.length) kukuIdx = 0;
+      mulQuestions.push(allKuku[kukuIdx++]);
+    }
+
+    const pairedItems = rawLetters.map((char, index) => ({
+      letter: char,
+      multiplication: mulQuestions[index]
+    }));
+
+    const shuffledPairs = shuffleArray(pairedItems);
+    const gridCols = totalCount <= 6 ? 3 : 4;
+
+    levels.push({
+      level: levelNum + 1,
+      category: cat,
+      word: targetWord,
+      gridCols: gridCols,
+      pairs: shuffledPairs
+    });
+  });
+
+  return levels;
+}
+
+function initGame(resetAll = true) {
+  if (resetAll) {
+    currentStage = 1;
+    currentLevelIdx = 0;
+    collectedWords = [];
+    reviewKukuList.clear();
+    remainingSeconds = 180;
+    pendingBonusTime = false;
+    gameLevelsData = buildRandomLevels();
+    startTimer();
+  }
+
+  loadLevel(currentLevelIdx);
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    remainingSeconds--;
+    updateTimerDisplay();
+
+    if (remainingSeconds <= 0) {
+      clearInterval(timerInterval);
+      showGameOverModal(false);
+    }
+  }, 1000);
+  updateTimerDisplay();
+}
+
+function updateTimerDisplay() {
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  elements.timer.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function triggerBonusTimeAnimation(seconds = 30) {
+  elements.timePlusBadge.classList.remove("animate-absorb-time");
+  void elements.timePlusBadge.offsetWidth;
+  elements.timePlusBadge.classList.add("animate-absorb-time");
+
+  setTimeout(() => {
+    remainingSeconds += seconds;
+    updateTimerDisplay();
+
+    elements.timer.classList.add("scale-125", "text-emerald-500");
+    setTimeout(() => {
+      elements.timer.classList.remove("scale-125", "text-emerald-500");
+    }, 300);
+  }, 700);
+}
+
+function loadLevel(levelIdx) {
+  const levelData = gameLevelsData[levelIdx];
+  if (!levelData) {
+    showStageClearModal();
+    return;
+  }
+
+  const stageBadge = document.getElementById("stage-badge");
+  const questionBadge = document.getElementById("question-badge");
+  if (stageBadge && questionBadge) {
+    stageBadge.textContent = `ステージ ${currentStage}`;
+    questionBadge.textContent = `だい ${levelData.level} もん`;
+  }
+
+  elements.categoryHint.textContent = levelData.category;
+  elements.wordLengthHint.textContent = `${levelData.word.length}文字のことば`;
+  elements.statusMessage.textContent = "パネルを タップして 九九に こたえよう！";
+
+  openedTiles = new Array(levelData.pairs.length).fill(false);
+  availablePoolLetters = [];
+  userSelectedLetters = [];
+
+  renderBoard(levelData);
+  renderPoolLetters();
+  renderAnswerSlots(levelData.word.length);
+
+  if (pendingBonusTime) {
+    pendingBonusTime = false;
+    setTimeout(() => {
+      triggerBonusTimeAnimation(30);
+    }, 400);
+  }
+}
+
+function renderBoard(levelData) {
+  elements.board.innerHTML = "";
+  elements.board.style.gridTemplateColumns = `repeat(${levelData.gridCols}, minmax(0, 1fr))`;
+
+  levelData.pairs.forEach((pair, idx) => {
+    const q = pair.multiplication;
+    const tile = document.createElement("div");
+    tile.className = "perspective-1000 cursor-pointer h-16 sm:h-20 w-16 sm:w-20 mx-auto";
+    
+    const isBatsu = pair.letter === "✖";
+    const backStyle = isBatsu
+      ? "bg-gradient-to-br from-slate-200 to-slate-300 text-rose-500 font-black text-3xl sm:text-4xl border-slate-300"
+      : "bg-gradient-to-br from-amber-300 to-yellow-400 text-amber-900 font-black text-2xl sm:text-3xl border-yellow-200";
+
+    tile.innerHTML = `
+      <div id="tile-inner-${idx}" class="relative w-full h-full transform-style-3d transition-transform duration-500 shadow-lg rounded-2xl">
+        <div class="absolute inset-0 backface-hidden bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-black text-base sm:text-xl rounded-2xl border-2 border-blue-300 flex items-center justify-center p-1 hover:brightness-110 transition shadow-md">
+          <span>${q.num1} × ${q.num2}</span>
+        </div>
+        <div class="absolute inset-0 backface-hidden rotate-y-180 ${backStyle} rounded-2xl border-2 flex items-center justify-center shadow-inner">
+          ${pair.letter}
+        </div>
+      </div>
+    `;
+
+    tile.addEventListener("click", () => {
+      if (!openedTiles[idx]) {
+        openQuizModal(idx);
+      }
+    });
+
+    elements.board.appendChild(tile);
+  });
+}
+
+/* ========================================================
+   7. クイズモーダル & 九九判定
+   ======================================================== */
+function openQuizModal(tileIdx) {
+  sounds.playTap();
+  currentActiveTileIndex = tileIdx;
+  currentQuizInputValue = "";
+
+  const levelData = gameLevelsData[currentLevelIdx];
+  const q = levelData.pairs[tileIdx].multiplication;
+
+  elements.quizExpression.textContent = `${q.num1} × ${q.num2}`;
+  elements.quizFeedback.textContent = "";
+  updateQuizInputDisplay();
+
+  elements.quizModal.classList.remove("opacity-0", "pointer-events-none");
+  elements.quizModal.classList.add("opacity-100");
+  elements.modalCard.classList.remove("scale-90");
+  elements.modalCard.classList.add("scale-100");
+}
+
+function hideQuizModal() {
+  elements.quizModal.classList.add("opacity-0", "pointer-events-none");
+  elements.quizModal.classList.remove("opacity-100");
+  elements.modalCard.classList.add("scale-90");
+  elements.modalCard.classList.remove("scale-100");
+}
+
+function updateQuizInputDisplay() {
+  elements.quizInputVal.textContent = currentQuizInputValue;
+}
+
+function handleQuizSubmit() {
+  if (currentActiveTileIndex === null) return;
+
+  const levelData = gameLevelsData[currentLevelIdx];
+  const pair = levelData.pairs[currentActiveTileIndex];
+  const q = pair.multiplication;
+  const userAns = parseInt(currentQuizInputValue, 10);
+
+  if (userAns === q.ans) {
+    sounds.playPingPong();
+    showFeedbackOverlay("OK");
+    
+    openedTiles[currentActiveTileIndex] = true;
+    const tileInner = document.getElementById(`tile-inner-${currentActiveTileIndex}`);
+    if (tileInner) {
+      tileInner.classList.add("rotate-y-180");
+    }
+
+    if (pair.letter !== "✖") {
+      availablePoolLetters.push({ id: currentActiveTileIndex, letter: pair.letter });
+      renderPoolLetters();
+      elements.statusMessage.textContent = `せいかい！ もじ 「${pair.letter}」 を てに入れたよ！`;
+    } else {
+      elements.statusMessage.textContent = "せいかい！ だけど ✖（はずれ）だったよ！ ほかの パネルを めくろう！";
+    }
+
+    hideQuizModal();
+
+  } else {
+    sounds.playIncorrect();
+    elements.quizFeedback.textContent = "ざんねん！ もういちど かんがえてみよう";
+    elements.modalCard.classList.add("animate-shake");
+    setTimeout(() => {
+      elements.modalCard.classList.remove("animate-shake");
+    }, 400);
+
+    reviewKukuList.add(`${q.num1} × ${q.num2} ＝ ${q.ans}`);
+  }
+}
+
+/* ========================================================
+   8. ことば作成 & 回答判定
+   ======================================================== */
+function renderPoolLetters() {
+  elements.lettersPool.innerHTML = "";
+
+  if (availablePoolLetters.length === 0) {
+    elements.lettersPool.innerHTML = `<span class="text-xs text-slate-400">パネルを めくると もじが でるよ</span>`;
+    return;
+  }
+
+  availablePoolLetters.forEach((item, index) => {
+    const btn = document.createElement("button");
+    /* タップ時のアニメーション（active:scale-95 や animate-pop）を削除 */
+    btn.className = "w-10 h-10 sm:w-12 sm:h-12 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-xl rounded-xl shadow-md border-2 border-amber-200 flex items-center justify-center transition";
+    btn.textContent = item.letter;
+
+    btn.addEventListener("click", () => {
+      sounds.playTap();
+      selectLetterFromPool(index);
+    });
+
+    elements.lettersPool.appendChild(btn);
+  });
+}
+
+function selectLetterFromPool(index) {
+  const levelData = gameLevelsData[currentLevelIdx];
+  if (userSelectedLetters.length >= levelData.word.length) return;
+
+  const item = availablePoolLetters.splice(index, 1)[0];
+  userSelectedLetters.push(item);
+
+  renderPoolLetters();
+  renderAnswerSlots(levelData.word.length);
+}
+
+function renderAnswerSlots(wordLength) {
+  elements.answerSlots.innerHTML = "";
+
+  for (let i = 0; i < wordLength; i++) {
+    const slot = document.createElement("div");
+    const item = userSelectedLetters[i];
+
+    if (item) {
+      /* タップ時のアニメーション（active:scale-95 や animate-pop）を削除 */
+      slot.className = "w-11 h-11 sm:w-13 sm:h-13 bg-emerald-500 text-white font-black text-2xl rounded-xl border-2 border-emerald-300 shadow-md flex items-center justify-center cursor-pointer transition";
+      slot.textContent = item.letter;
+
+      slot.addEventListener("click", () => {
+        sounds.playTap();
+        removeSelectedLetter(i);
+      });
+    } else {
+      slot.className = "w-11 h-11 sm:w-13 sm:h-13 bg-white/80 border-2 border-dashed border-emerald-300 rounded-xl flex items-center justify-center text-slate-300 text-sm font-bold";
+      slot.textContent = i + 1;
+    }
+
+    elements.answerSlots.appendChild(slot);
+  }
+
+  elements.checkWordBtn.disabled = (userSelectedLetters.length !== wordLength);
+}
+
+function removeSelectedLetter(index) {
+  const item = userSelectedLetters.splice(index, 1)[0];
+  availablePoolLetters.push(item);
+
+  renderPoolLetters();
+  renderAnswerSlots(gameLevelsData[currentLevelIdx].word.length);
+}
+
+function resetUserAnswer() {
+  sounds.playTap();
+  while (userSelectedLetters.length > 0) {
+    const item = userSelectedLetters.pop();
+    availablePoolLetters.push(item);
+  }
+  renderPoolLetters();
+  renderAnswerSlots(gameLevelsData[currentLevelIdx].word.length);
+}
+
+function checkWordAnswer() {
+  const levelData = gameLevelsData[currentLevelIdx];
+  const userWord = userSelectedLetters.map(x => x.letter).join("");
+
+  if (userWord === levelData.word) {
+    sounds.playPingPong();
+    setTimeout(() => sounds.playFanfare(), 300);
+
+    pendingBonusTime = true;
+
+    showFeedbackOverlay("STAMP");
+    collectedWords.push(levelData.word);
+
+    elements.statusMessage.textContent = `すごーい！「${levelData.word}」大正解！🎉`;
+
+    setTimeout(() => {
+      currentLevelIdx++;
+      if (currentLevelIdx < gameLevelsData.length) {
+        loadLevel(currentLevelIdx);
+      } else {
+        showStageClearModal();
+      }
+    }, 1800);
+
+  } else {
+    sounds.playIncorrect();
+    showFeedbackOverlay("NG");
+    elements.answerSlots.classList.add("animate-shake");
+    setTimeout(() => {
+      elements.answerSlots.classList.remove("animate-shake");
+    }, 400);
+
+    elements.statusMessage.textContent = "おしい！ もういちど ことばを つくってみよう";
+  }
+}
+
+/* ========================================================
+   9. オーバーレイ & モーダル処理
+   ======================================================== */
+function showStageClearModal() {
+  elements.stageClearTitle.textContent = `だい ${currentStage} ステージ クリア！🎉`;
+  elements.nextStageBtn.textContent = `だい ${currentStage + 1} ステージへ すすむ 🚀`;
+
+  elements.stageClearModal.classList.remove("opacity-0", "pointer-events-none");
+  elements.stageClearModal.classList.add("opacity-100");
+}
+
+function hideStageClearModal() {
+  elements.stageClearModal.classList.add("opacity-0", "pointer-events-none");
+  elements.stageClearModal.classList.remove("opacity-100");
+}
+
+function startNextStage() {
+  sounds.playTap();
+  hideStageClearModal();
+
+  currentStage++;
+  currentLevelIdx = 0;
+  gameLevelsData = buildRandomLevels();
+
+  loadLevel(currentLevelIdx);
+}
+
+function showFeedbackOverlay(type) {
+  if (type === "STAMP") {
+    elements.feedbackContent.innerHTML = `
+      <div class="animate-pop flex flex-col items-center justify-center">
+        <svg viewBox="0 0 200 200" class="w-52 h-52 sm:w-64 sm:h-64 drop-shadow-2xl">
+          <defs>
+            <path id="petal" d="M 0,-88 C 18,-88 24,-60 0,-50 C -24,-60 -18,-88 0,-88 Z" fill="#ff4d6d" stroke="#d61c4e" stroke-width="3"/>
+          </defs>
+          <g transform="translate(100, 100)">
+            <use href="#petal" transform="rotate(0)"/>
+            <use href="#petal" transform="rotate(30)"/>
+            <use href="#petal" transform="rotate(60)"/>
+            <use href="#petal" transform="rotate(90)"/>
+            <use href="#petal" transform="rotate(120)"/>
+            <use href="#petal" transform="rotate(150)"/>
+            <use href="#petal" transform="rotate(180)"/>
+            <use href="#petal" transform="rotate(210)"/>
+            <use href="#petal" transform="rotate(240)"/>
+            <use href="#petal" transform="rotate(270)"/>
+            <use href="#petal" transform="rotate(300)"/>
+            <use href="#petal" transform="rotate(330)"/>
+            
+            <circle cx="0" cy="0" r="68" fill="#ff4d6d" stroke="#d61c4e" stroke-width="3"/>
+            <circle cx="0" cy="0" r="62" fill="none" stroke="#ffffff" stroke-width="3" stroke-dasharray="6 4" />
+            <circle cx="0" cy="0" r="56" fill="none" stroke="#ffffff" stroke-width="2" />
+            
+            <text x="0" y="-26" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-weight="900" font-size="20" font-family="'Kosugi Maru', sans-serif">たいへん</text>
+            <text x="0" y="3" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-weight="900" font-size="25" font-family="'Kosugi Maru', sans-serif">よく</text>
+            <text x="0" y="31" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-weight="900" font-size="18" font-family="'Kosugi Maru', sans-serif">できました</text>
+          </g>
+        </svg>
+      </div>
+    `;
+  } else if (type === "OK") {
+    elements.feedbackContent.innerHTML = `<div class="text-8xl sm:text-9xl font-black text-emerald-500 filter drop-shadow-lg animate-pop">⭕️</div>`;
+  } else {
+    elements.feedbackContent.innerHTML = `<div class="text-8xl sm:text-9xl font-black text-rose-500 filter drop-shadow-lg animate-pop">❌</div>`;
+  }
+
+  elements.feedbackOverlay.classList.remove("opacity-0");
+  elements.feedbackOverlay.classList.add("opacity-100");
+
+  setTimeout(() => {
+    elements.feedbackOverlay.classList.remove("opacity-100");
+    elements.feedbackOverlay.classList.add("opacity-0");
+  }, 1100);
+}
+
+function showGameOverModal(isCleared) {
+  clearInterval(timerInterval);
+
+  const titleEl = document.getElementById("result-title");
+  const subtitleEl = document.getElementById("result-subtitle");
+
+  if (isCleared) {
+    titleEl.textContent = "全問クリア！おめでとう！🎉";
+    subtitleEl.textContent = "九九マスターだね！たくさんの ことばを つくれたよ！";
+  } else {
+    titleEl.textContent = "タイムアップ！⏰";
+    subtitleEl.textContent = "おつかれさま！つぎは もっと はやく といてみよう！";
+  }
+
+  elements.collectedWordsResult.innerHTML = "";
+  if (collectedWords.length > 0) {
+    collectedWords.forEach(w => {
+      const tag = document.createElement("span");
+      tag.className = "px-3 py-1 bg-white text-blue-800 font-black text-sm rounded-full shadow border border-blue-200";
+      tag.textContent = w;
+      elements.collectedWordsResult.appendChild(tag);
+    });
+  } else {
+    elements.collectedWordsResult.innerHTML = `<span class="text-xs text-slate-400">まだありません</span>`;
+  }
+
+  elements.reviewKukuResult.innerHTML = "";
+  if (reviewKukuList.size > 0) {
+    reviewKukuList.forEach(kuku => {
+      const tag = document.createElement("span");
+      tag.className = "px-2.5 py-1 bg-white text-rose-700 font-bold text-xs rounded-lg border border-rose-200 shadow-xs";
+      tag.textContent = kuku;
+      elements.reviewKukuResult.appendChild(tag);
+    });
+  } else {
+    elements.reviewKukuResult.innerHTML = `<span class="text-xs text-emerald-600 font-bold">全問正解！ばっちりだね！✨</span>`;
+  }
+
+  elements.gameOverModal.classList.remove("opacity-0", "pointer-events-none");
+  elements.gameOverModal.classList.add("opacity-100");
+}
+
+function hideGameOverModal() {
+  elements.gameOverModal.classList.add("opacity-0", "pointer-events-none");
+  elements.gameOverModal.classList.remove("opacity-100");
+}
+</script>
+</body>
+</html>
